@@ -15,11 +15,15 @@ const strtep = {
 
 const UserSchema = new Schema({ 
     username:strtep, 
-    email:strtep, 
+    email:{ 
+    type:String, 
+    require:true, 
+    unique:true,
+    match: /[a-z0-9!#$%&'*+/=?^_`{|}~-]+(?:\.[a-z0-9!#$%&'*+/=?^_`{|}~-]+)*@(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]*[a-z0-9])?/ 
+    }, 
     password:{ 
         type:String, 
         required:true, 
-        unique:false,
     }, 
     first_name:strreq, 
     last_name:strreq,
