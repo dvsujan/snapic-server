@@ -7,6 +7,8 @@ const User = require('../models/User');
 const Posts = require('../models/posts'); 
 const bcrypt = require('bcrypt'); 
 const jwt = require('jsonwebtoken');
+const { find } = require('../models/posts');
+const checkAuth = require('../middleware/checkAuth');
 require('dotenv').config()
 apiURL = 'localhost:5000'
 
@@ -198,16 +200,22 @@ router.delete("/:userId", (req, res, next) => {
 
 
 router.get('/get-followers/:userid',(req,res,next)=>{ 
-    id = req.params.userid; 
-    User.findById(id)
+    id = req.params.userid;
+    const { page = 1, limit = 10} = req.query;
+    const followers = User.findById(id)
     .then(function(user) {
-        return res.json(user.following);
+        return res.json(user.following)
+        .limit(limit * 1)
+        .skip((page - 1) * limit) ;
+        .then(())
     })
     .catch(function(err) {
         return res.json(err);
     });     
 });  
+router.get('/following',(req,res)=>{ 
 
+})
 router.get('/getid/:username',(req,res,next)=>{ 
     const username = req.params.username;  
     const id = User.findOne({
@@ -225,7 +233,7 @@ router.get('/getid/:username',(req,res,next)=>{
  
 })
 
-router.post('/follow',(req,res,next)=>{
+router.post('/follow',checkAuth,(req,res,next)=>{
     const id1 = req.body.id1;
     const id2 = req.body.id2; 
     try{
