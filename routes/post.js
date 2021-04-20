@@ -2,8 +2,9 @@
 const express = require('express');
 const router = express.Router();
 const multer = require('multer'); 
-const User = require('../models/User'); 
 const Posts = require('../models/posts'); 
+const User = require('../models/User'); 
+const checkAuth = require('../middleware/checkAuth')
 apiURL = 'localhost:5000'
 
 const storage = multer.diskStorage({
@@ -47,11 +48,10 @@ const upload = multer({
 
 
 
-router.get('/', async (req, res) => {
-  const { page = 1, limit = 10,userId} = req.query;
-
+router.get('/',checkAuth, async (req, res) => {
+  const { page = 1, limit = 10} = req.query;
   try {
-    const posts = await Posts.find({userId:userId})
+    const posts = await Posts.find({userId:req.body.userId})
       .limit(limit * 1)
       .skip((page - 1) * limit)
       .exec();
@@ -96,8 +96,7 @@ router.get('/all', async (req, res) => {
 }
 });
 
-
-router.post('/',upload.single('PostImage'),(req,res)=>{ 
+router.post('/',checkAuth,upload.single('PostImage'),(req,res)=>{ 
     const post = new Posts(
         {
             description:req.body.description,
@@ -118,5 +117,34 @@ router.post('/',upload.single('PostImage'),(req,res)=>{
     })
 }); 
 
+router.get('/:username',(req,res)=>{
+  const { page = 1, limit = 10} = req.query;
+  const user = User.findOne({username:req.params.username}).then((user)=>{ 
+    if(user){
+      const Id = user._id;
+      psts = Posts.find({ 
+        userId:Id,
+      })
+      .limit(limit * 1)
+      .skip((page - 1) * limit) 
+      .then(psts=>{
+        const count =  Posts.countDocuments().then(count=>{ 
+          res.status(201).json({
+            psts,
+            totalPages: Math.ceil(count / limit),
+            currentPage: page
+          });
+        }
+        );
+       
+      }) 
+    }
+    else{ 
+      res.status(404).json({ 
+        message:"user Not found", 
+      })
+    } 
+  })
+});
 
 module.exports = router; 

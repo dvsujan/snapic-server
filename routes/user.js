@@ -69,7 +69,7 @@ router.get('/:id',(req,res,next)=>{
     })
 });
 
-router.post("/signup", Dpupload.single('ProfileImg'),(req, res, next) => {
+router.post("/register", Dpupload.single('ProfileImg'),(req, res, next) => {
     User.find({ email: req.body.email })
     .exec()
     .then(user => {
@@ -88,8 +88,7 @@ router.post("/signup", Dpupload.single('ProfileImg'),(req, res, next) => {
               email: req.body.email,
               password: hash,
               username:req.body.username, 
-              first_name:req.body.first_name , 
-              last_name:req.body.last_name, 
+              name:req.body.first_name , 
               DP:apiURL+'/'+req.file.path ,
             });
             user
@@ -102,9 +101,16 @@ router.post("/signup", Dpupload.single('ProfileImg'),(req, res, next) => {
               })
               .catch(err => {
                 console.log(err);
-                res.status(500).json({
+                if(err.code == 11000){ 
+                  res.status(209).json({ 
+                    message:'Username already Exists',
+                  })
+                } 
+                else{
+                  res.status(500).json({
                   error: err
                 });
+              }
               });
           }
         });
@@ -199,15 +205,12 @@ router.delete("/:userId", (req, res, next) => {
 });
 
 
-router.get('/get-followers/:userid',(req,res,next)=>{ 
+router.get('/followers/:userid',(req,res,next)=>{ 
     id = req.params.userid;
-    const { page = 1, limit = 10} = req.query;
-    const followers = User.findById(id)
-    .then(function(user) {
-        return res.json(user.following)
-        .limit(limit * 1)
-        .skip((page - 1) * limit) ;
-        .then(())
+    // const { page = 1, limit = 10} = req.query;
+    const following = User.findById(id)
+    .then(function(following) {
+        return res.json(user.following);
     })
     .catch(function(err) {
         return res.json(err);

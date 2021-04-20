@@ -25,8 +25,7 @@ const UserSchema = new Schema({
         type:String, 
         required:true, 
     }, 
-    first_name:strreq, 
-    last_name:strreq,
+    name:strreq, 
     DP:{ 
         type:String,
         default:"localhost:5000\profiles\default360_F_346936114_RaxE6OQogebgAWTalE1myseY1Hbb5qPM.jpg"
