@@ -2,9 +2,8 @@ const mongoose = require('mongoose');
 const Schema = mongoose.Schema;
 const PostsSchema = new Schema({ 
     likes:{ 
-        type:Number,
+        type:Array,
         require:true, 
-        default:0, 
     }, 
     description:{ 
         type:String, 

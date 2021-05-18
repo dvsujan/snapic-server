@@ -7,14 +7,27 @@ const User = require('../models/User');
 const Posts = require('../models/posts'); 
 const bcrypt = require('bcrypt'); 
 const jwt = require('jsonwebtoken');
-const { find } = require('../models/posts');
+const { find, getMaxListeners } = require('../models/posts');
 const checkAuth = require('../middleware/checkAuth');
+const elasticsearch = require('elasticsearch')
+const nodemailer = require('nodemailer');
+const sharp = require('sharp');
+const fs = require('fs'); 
 require('dotenv').config()
 apiURL = 'localhost:5000'
+const mail = require('./SendMail'); 
+const security = require('./security')
+const generateVerificationCode = ()=>{ 
+  var minm = 100000;
+  var maxm = 999999;
+  const down = Math.floor(Math
+  .random() * (maxm - minm + 1)) + minm;
+  return down ; 
+}
 
-const dpstorage = multer.diskStorage({
+const storage = multer.diskStorage({
   destination: function(req, file, cb) {
-    cb(null, './profiles/');
+    cb(null, './HQPost/');
   },
   filename: function(req, file, cb) {
     cb(null,makeid(10)+file.originalname);
@@ -22,7 +35,6 @@ const dpstorage = multer.diskStorage({
 });
 
 const fileFilter = (req, file, cb) => {
-  // reject a file
   if (file.mimetype === 'image/jpeg' || file.mimetype === 'image/png') {
     cb(null, true);
   } else {
@@ -30,10 +42,10 @@ const fileFilter = (req, file, cb) => {
   }
 };
 
-const Dpupload = multer({ 
-    storage:dpstorage,
+const upload = multer({ 
+    storage:storage,
     limit:{ 
-        filesize:1024*1024*1,
+        filesize:1024*1024*20,
     },
     fileFilter:fileFilter,
 })
@@ -49,16 +61,18 @@ function makeid(length) {
    return result.join('');
 }
 
+
 router.get('/:id',(req,res,next)=>{ 
     const id = req.params.id;
     User.findById(id)
     .then((user)=>{
         resobj = { 
-            username:user.username, 
-            first_name:user.firest_name , 
-            last_name:user.last_name , 
-            followers:user.followers, 
-            following:user.following, 
+          username:user.username,
+          bio:user.bio,   
+          followers:user.followers, 
+          following:user.following,
+          DP:user.DP,
+          name:user.name,
         } 
         res.status(200).json(resobj);  
     })
@@ -69,7 +83,7 @@ router.get('/:id',(req,res,next)=>{
     })
 });
 
-router.post("/register", Dpupload.single('ProfileImg'),(req, res, next) => {
+router.post('/register',(req, res) => {
     User.find({ email: req.body.email })
     .exec()
     .then(user => {
@@ -80,6 +94,7 @@ router.post("/register", Dpupload.single('ProfileImg'),(req, res, next) => {
       } else {
         bcrypt.hash(req.body.password, 10, (err, hash) => {
           if (err) {
+              console.log(err);
             return res.status(500).json({
               error: err
             });
@@ -87,16 +102,20 @@ router.post("/register", Dpupload.single('ProfileImg'),(req, res, next) => {
             const user = new User({
               email: req.body.email,
               password: hash,
-              username:req.body.username, 
+              username:req.body.username.toLowerCase(), 
               name:req.body.first_name , 
-              DP:apiURL+'/'+req.file.path ,
             });
             user
               .save()
               .then(result => {
                 console.log(result);
+                const code = generateVerificationCode();
+                mail.sendMail(req.body.email,code,req.body.first_name);  
+                const userEncryption = security.encrypt(req.body.email); 
                 res.status(201).json({
-                  message: "User created"
+                  message: "User created",
+                  VerificationCode:code,
+                  hash:userEncryption ,
                 });
               })
               .catch(err => {
@@ -118,28 +137,41 @@ router.post("/register", Dpupload.single('ProfileImg'),(req, res, next) => {
     });
 });
 
-router.patch('/',(req, res)=>{ 
-    const first_nam = req.body.first_name ; 
-    const last_name = req.body.last_name ; 
-    const password = req.body.password ; 
-    const id = req.body.id; 
-    try{ 
-        const rus = User.findByIdAndUpdate(id,{ 
-            first_name:first_nam, 
-            last_name:last_name, 
-            password:password, 
-        }).then((rus)=>{ 
-            res.status(200).json({ 
-                message:'success', 
-            })
-        })
-   }
-    catch(err){ 
-        res.status(500).json({ 
-            message:'error',
-        })
-    } 
+router.put('/',checkAuth,(req, res)=>{ 
+  const username = req.userData.username; 
+  const Bio = req.body.bio; 
+  const Name = req.body.name ; 
+  console.log(req);  
+  User.findOneAndUpdate({username:username},{bio:Bio, name:Name}).then(()=>{ 
+    res.json({message:"done"});
+  }) 
+  .catch((err)=>{ 
+    console.log(err); 
+  })
+})
 
+router.patch('/',checkAuth, upload.single('ProfileImage'), async(req, res)=>{ 
+  const FinalPath = './profiles/'+makeid(10)+'resized'+req.file.originalname;
+  const { filename: ProfileImage } = req.file;
+  const username = req.userData.username;
+  const bio = req.body.bio; 
+  const name = req.body.name; 
+  console.log(ProfileImage);
+  await sharp(req.file.path)
+      .resize({
+          fit: sharp.fit.contain,
+          width:200, 
+        })
+      .jpeg({ quality: 50 })
+      .toFile(FinalPath)
+      fs.unlinkSync(req.file.path); 
+
+    User.findOneAndUpdate({username:username},{bio:bio, name:name, DP:FinalPath.replace('./','')}).then(()=>{ 
+      res.status(200).json({message:"done"}); 
+    })
+    .catch((err)=>{ 
+      console.log(err); 
+    })
 });
 
 router.post("/login", (req, res, next) => {
@@ -151,6 +183,11 @@ router.post("/login", (req, res, next) => {
           message: "Auth failed"
         });
       }
+      else if(user[0].Active==false){ 
+        return res.status(401).json({
+          message:"Account Not Activated",
+        })
+      } 
       bcrypt.compare(req.body.password, user[0].password, (err, result) => {
         if (err) {
           return res.status(401).json({
@@ -166,7 +203,7 @@ router.post("/login", (req, res, next) => {
             },
             process.env.JWT_KEY,
             {
-                expiresIn: "1h"
+                expiresIn: "10d"
             }
           );
           return res.status(200).json({
@@ -188,8 +225,8 @@ router.post("/login", (req, res, next) => {
 });
 
 
-router.delete("/:userId", (req, res, next) => {
-  User.remove({ _id: req.params.userId })
+router.delete("/",checkAuth, (req, res, next) => {
+  User.remove({ _id: req.userData.userId })
     .exec()
     .then(result => {
       res.status(200).json({
@@ -205,9 +242,8 @@ router.delete("/:userId", (req, res, next) => {
 });
 
 
-router.get('/followers/:userid',(req,res,next)=>{ 
-    id = req.params.userid;
-    // const { page = 1, limit = 10} = req.query;
+router.get('/followers/',checkAuth,(req,res,next)=>{ 
+    id = req.userData.userId;
     const following = User.findById(id)
     .then(function(following) {
         return res.json(user.following);
@@ -220,7 +256,7 @@ router.get('/following',(req,res)=>{
 
 })
 router.get('/getid/:username',(req,res,next)=>{ 
-    const username = req.params.username;  
+    const username = req.params.username.toLowerCase();  
     const id = User.findOne({
         username:username
     }).then((id)=>{
@@ -236,30 +272,27 @@ router.get('/getid/:username',(req,res,next)=>{
  
 })
 
-router.post('/follow',checkAuth,(req,res,next)=>{
-    const id1 = req.body.id1;
-    const id2 = req.body.id2; 
+router.post('/follow/:id',checkAuth,(req,res,next)=>{
+    const id1 = req.userData.userId;
+    const id2 = req.params.id; 
     try{
         const done = true ;   
         const result = User.findByIdAndUpdate(id1, 
             {
-                $addToSet:{followers:id2},
+                $addToSet:{following:id2},
             },
         ).then(()=>{
             done = true;
         }); 
         const resultt = User.findByIdAndUpdate(id2, 
             {
-                $addToSet:{following:id1},
+                $addToSet:{followers:id1},
             },
         ).then(()=>{ 
-            done = true ; 
+          res.json({
+            message:'done', 
+        })
         });
-        if(done == true){ 
-            res.json({
-                message:'done', 
-            })
-        }
     } 
     catch(err){ 
         res.status(400).json({
@@ -268,25 +301,48 @@ router.post('/follow',checkAuth,(req,res,next)=>{
     }
 });
 
+router.get('/me/info', checkAuth, (req, res)=>{ 
+  res.json({id:req.userData.userId, email:req.userData.email, username:req.userData.username, message:"done"}); 
+})
 
-router.get('/user-aval/:username',(req,res,next)=>{ 
-    const usename = req.params.username; 
-    const result = User.findOne({ 
-        username:usename,
-    }).then((result)=>{ 
-        if(result == null){ 
-            res.status(404).json({ 
-                found:false, 
-            })
+
+
+router.get('/search/:username',checkAuth,async(req, res)=>{ 
+  const {limit = 10} = req.query;
+  const Username = req.params.username.toLowerCase() ;
+  const rege =  RegExp('^'+Username) ;  
+    const Users = await User.find({
+      username:rege, 
+    }).limit(limit)
+    .then((Users)=>{ 
+      if(Users){
+        const filter = function(user) {
+          return {
+          '_id': user._id,
+          'username': user.username,
+            'DP':user.DP,
+            name:user.name,
         }
-        else{ 
-            res.status(200).json({
-                found:true,
-            })
-        }
+       }
+       const filteredUsers = Users.map(filter);
+       res.json({users:filteredUsers})
+      }
+      else{ 
+        res.status(404).json({message:'userNotFound'}); 
+      }
+    }) 
+    .catch(err=>{console.log(err)}) 
+  })
+
+router.post('/activate/:hash',(req, res)=>{ 
+  const email = security.decrypt(req.params.hash); 
+  User.findOneAndUpdate({email:email},{Active:true})
+  .then(()=>{
+    res.json({
+      message:"done",
     })
-
-}); 
-
+  })
+  .catch((err)=>{console.log(err)}); 
+})
 
 module.exports = router; 

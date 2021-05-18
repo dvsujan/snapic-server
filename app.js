@@ -16,7 +16,7 @@ app.use(express.json());
 app.use(express.urlencoded({extended:false})); 
 app.use('/Posts', express.static('Posts')) ; 
 app.use('/profiles', express.static('profiles')) ; 
-apiURL = 'localhost:5000'
+app.use('/Extras', express.static('Extras')) ; 
 
 const PORT = 5000 ;
 
