@@ -5,7 +5,7 @@ const sendMail = async (email, code, name)=>{
   service: 'gmail',
   auth: {
     user: 'snapic.app.mail@gmail.com',
-    pass: 'Ss100800$'
+    pass: 'password'
   }
   }); 
     var mailOptions = {
